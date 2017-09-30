@@ -30,8 +30,15 @@ import tw.com.cht.iot.util.JsonUtils;
 public class SpeakerClient {
     static final Logger LOG = LoggerFactory.getLogger(SpeakerClient.class);
 
+    static final long RETRY_INTERVAL = 3000L;
+    static final int CONNECTION_TIMEOUT = 5;
+    static final int KEEP_ALIVE_INTERVAL = 30;
+    static final int QOS = 0;
+
     static final String REQ_TOPIC_FORMAT = "ai/speaker/%s/%s/req";
     static final String RSP_TOPIC_FORMAT = "ai/speaker/%s/%s/rsp";
+
+    static final String UTF8 = "UTF-8";
 
     static final DateFormat DF = new SimpleDateFormat("yyyy-MM-DD'T'HH:mm:ss.SSS'Z'");
     static {
@@ -51,7 +58,7 @@ public class SpeakerClient {
     Thread thread;
     int requestId = 1;
 
-    public SpeakerClient(String uri, String vendorId, String deviceId, Listener listener) throws Exception {
+    public SpeakerClient(String uri, String vendorId, String deviceId, Listener listener) {
         this.uri = uri;
         this.vendorId = vendorId;
         this.deviceId = deviceId;
@@ -81,7 +88,7 @@ public class SpeakerClient {
 
         while (thread != null) {
             try {
-                Thread.sleep(1000L);
+                Thread.sleep(RETRY_INTERVAL);
 
                 MqttClient client = new MqttClient(uri, "", persistence);
                 try {
@@ -90,7 +97,7 @@ public class SpeakerClient {
 
                         @Override
                         public void messageArrived(String topic, MqttMessage message) throws Exception {
-                            String json = new String(message.getPayload(), "UTF-8");
+                            String json = new String(message.getPayload(), UTF8);
 
                             LOG.info("Message from {} - {}", topic, json);
 
@@ -122,8 +129,8 @@ public class SpeakerClient {
                     MqttConnectOptions opts = new MqttConnectOptions();
                     opts.setUserName(vendorId);
                     opts.setPassword(deviceId.toCharArray());
-                    opts.setConnectionTimeout(5);
-                    opts.setKeepAliveInterval(30);
+                    opts.setConnectionTimeout(CONNECTION_TIMEOUT);
+                    opts.setKeepAliveInterval(KEEP_ALIVE_INTERVAL);
                     opts.setCleanSession(true);
 
                     opts.setSocketFactory(SSLContext.getDefault().getSocketFactory());
@@ -144,9 +151,9 @@ public class SpeakerClient {
 
                         // publish the message
                         MqttMessage msg = new MqttMessage();
-                        msg.setQos(0);
+                        msg.setQos(QOS);
                         msg.setRetained(false);
-                        msg.setPayload(json.getBytes("UTF-8"));
+                        msg.setPayload(json.getBytes(UTF8));
 
                         // publish the message and wait for reply
                         client.publish(reqTopic, msg);

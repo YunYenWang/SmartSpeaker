@@ -8,11 +8,9 @@ import android.content.IntentFilter;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
-import android.speech.RecognitionListener;
 import android.speech.RecognizerIntent;
 import android.speech.SpeechRecognizer;
 import android.speech.tts.TextToSpeech;
-import android.support.annotation.IntDef;
 import android.support.annotation.Nullable;
 
 import org.slf4j.Logger;
@@ -48,6 +46,110 @@ public class MainService extends Service {
     public MainService() {
     }
 
+    TextToSpeech newTextToSpeech() {
+        tts = new TextToSpeech(this, new TextToSpeech.OnInitListener() {
+            public void onInit(int i) {
+                if (i == TextToSpeech.SUCCESS) {
+                    if (tts.isLanguageAvailable(Locale.TAIWAN) == TextToSpeech.LANG_COUNTRY_AVAILABLE) {
+                        tts.setLanguage(Locale.TAIWAN);
+
+                    } else { // otherwise, Locale is not yet supported
+                        LOG.error("Taiwan language is not supported!");
+
+                    }
+                }
+            }
+        });
+
+        tts.setOnUtteranceCompletedListener(new TextToSpeech.OnUtteranceCompletedListener() {
+            public void onUtteranceCompleted(String s) {
+                if (LISTEN.equals(s)) {
+                    handler.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            doListen();
+                        }
+                    });
+
+                } else if (DONE.equals(s)) {
+                    handler.post(new Runnable() {
+                        @Override
+                        public void run() {
+//                                standby();
+                        }
+                    });
+                }
+            }
+        });
+
+        return tts;
+    }
+
+    SpeechRecognizer newSpeechRecognizer() {
+        SpeechRecognizer recognizer = SpeechRecognizer.createSpeechRecognizer(this);
+        recognizer.setRecognitionListener(new RecognitionAdapter() {
+
+            @Override
+            public void onResults(Bundle bundle) {
+                ArrayList<String> data = bundle.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
+                if (!data.isEmpty()) {
+                    String first = data.get(0);
+                    onAsk(first);
+                }
+            }
+
+            @Override
+            public void onError(int i) {
+                // ask user to try again
+            }
+        });
+
+        return recognizer;
+    }
+
+    SpeakerClient newSpeakerClient(String url, String vendorID, String deviceNO) {
+        return new SpeakerClient(url, vendorID, deviceNO, new SpeakerClient.Listener() {
+            @Override
+            public void onBullet(Bullet b) {
+                doCommand(b);
+            }
+        });
+    }
+
+    // ======
+
+    @Override
+    public int onStartCommand(Intent intent, int flags, int startId) {
+        LOG.info("Service is started. {}", startId);
+
+        if (receiver == null) {
+            handler = new Handler(getApplicationContext().getMainLooper());
+
+            tts = newTextToSpeech();
+
+            recognizer = newSpeechRecognizer();
+
+            String url = getString(R.string.url);
+            String vendorID = getString(R.string.vendorID);
+            String deviceNO = getString(R.string.deviceNO);
+            client = newSpeakerClient(url, vendorID, deviceNO);
+
+            receiver = new BroadcastReceiver() {
+                @Override
+                public void onReceive(Context context, Intent intent) {
+                    LOG.info("Receive - {}", intent);
+
+                    hello();
+                }
+            };
+
+            String action = getString(R.string.trigger_intent_action);
+            registerReceiver(receiver, new IntentFilter(action));
+        }
+
+        return super.onStartCommand(intent, flags, startId);
+    }
+
     @Nullable
     @Override
     public IBinder onBind(Intent intent) {
@@ -66,130 +168,11 @@ public class MainService extends Service {
         super.onDestroy();
     }
 
-    @Override
-    public int onStartCommand(Intent intent, int flags, int startId) {
-        LOG.info("Service is started. {}", startId);
-
-        if (receiver == null) {
-            handler = new Handler(getApplicationContext().getMainLooper());
-
-            tts = new TextToSpeech(this, new TextToSpeech.OnInitListener() {
-                public void onInit(int i) {
-                    if (i == TextToSpeech.SUCCESS) {
-                        if (tts.isLanguageAvailable(Locale.TAIWAN) == TextToSpeech.LANG_COUNTRY_AVAILABLE) {
-                            tts.setLanguage(Locale.TAIWAN);
-
-                        } else { // otherwise, Locale is not yet supported
-                            LOG.error("Taiwan language is not supported!");
-
-                        }
-                    }
-                }
-            });
-
-            tts.setOnUtteranceCompletedListener(new TextToSpeech.OnUtteranceCompletedListener() {
-                public void onUtteranceCompleted(String s) {
-                    if (LISTEN.equals(s)) {
-                        handler.post(new Runnable() {
-                            @Override
-                            public void run() {
-                                doListen();
-                            }
-                        });
-
-                    } else if (DONE.equals(s)) {
-                        handler.post(new Runnable() {
-                            @Override
-                            public void run() {
-                                standby();
-                            }
-                        });
-                    }
-                }
-            });
-
-            recognizer = SpeechRecognizer.createSpeechRecognizer(this);
-            recognizer.setRecognitionListener(new RecognitionListener() {
-
-                @Override
-                public void onReadyForSpeech(Bundle bundle) {
-                }
-
-                @Override
-                public void onBeginningOfSpeech() {
-                }
-
-                @Override
-                public void onRmsChanged(float v) {
-                }
-
-                @Override
-                public void onBufferReceived(byte[] bytes) {
-                }
-
-                @Override
-                public void onEndOfSpeech() {
-                }
-
-                @Override
-                public void onError(int i) {
-                    onAsk("");
-                }
-
-                @Override
-                public void onResults(Bundle bundle) {
-                    ArrayList<String> data = bundle.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
-                    if (!data.isEmpty()) {
-                        String first = data.get(0);
-                        onAsk(first);
-                    }
-                }
-
-                @Override
-                public void onPartialResults(Bundle bundle) {
-                }
-
-                @Override
-                public void onEvent(int i, Bundle bundle) {
-                }
-            });
-
-            try {
-                String url = getString(R.string.url);
-                String vendorID = getString(R.string.vendorID);
-                String deviceNO = getString(R.string.deviceNO);
-
-                client = new SpeakerClient(url, vendorID, deviceNO, new SpeakerClient.Listener() {
-                    @Override
-                    public void onBullet(Bullet b) {
-                        doCommand(b);
-                    }
-                });
-
-            } catch (Exception e) {
-                LOG.error("Failed to create the speaker client", e);
-            }
-
-
-            receiver = new BroadcastReceiver() {
-                @Override
-                public void onReceive(Context context, Intent intent) {
-                    LOG.info("{}", intent);
-
-                    hello();
-                }
-            };
-
-            registerReceiver(receiver, new IntentFilter("com.js.wakeup"));
-        }
-
-        return super.onStartCommand(intent, flags, startId);
-    }
-
     // ======
 
     void standby() {
-        Intent intent = new Intent("com.js.standby");
+        String action = getString(R.string.standby_intent_action);
+        Intent intent = new Intent(action);
         sendBroadcast(intent);
     }
 
@@ -215,9 +198,7 @@ public class MainService extends Service {
     }
 
     void onAsk(String text) {
-        if (text.length() > 0) {
-            LOG.info("Ask {}", text);
-
+        if (!text.isEmpty()) {
             InvokeReq req = new InvokeReq();
             req.Text = text;
 
@@ -231,8 +212,6 @@ public class MainService extends Service {
     }
 
     void doCommand(Bullet b) {
-        LOG.info("Command: \n{}", JsonUtils.toPrettyPrintJson(b));
-
         if (b instanceof PushMessage) {
             PushMessage pm = (PushMessage) b;
             for (PushMessage.CommandType command : pm.Commands) {
