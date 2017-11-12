@@ -5,6 +5,8 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.media.MediaPlayer;
+import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
@@ -16,6 +18,7 @@ import android.support.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.net.URLEncoder;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Locale;
@@ -35,7 +38,6 @@ public class MainService extends Service {
     static final String LISTEN = "listen";
     static final String DONE = "done";
 
-    TextToSpeech tts;
     SpeechRecognizer recognizer;
     SpeakerClient client;
 
@@ -44,45 +46,6 @@ public class MainService extends Service {
     Handler handler;
 
     public MainService() {
-    }
-
-    TextToSpeech newTextToSpeech() {
-        tts = new TextToSpeech(this, new TextToSpeech.OnInitListener() {
-            public void onInit(int i) {
-                if (i == TextToSpeech.SUCCESS) {
-                    if (tts.isLanguageAvailable(Locale.TAIWAN) == TextToSpeech.LANG_COUNTRY_AVAILABLE) {
-                        tts.setLanguage(Locale.TAIWAN);
-
-                    } else { // otherwise, Locale is not yet supported
-                        LOG.error("Taiwan language is not supported!");
-
-                    }
-                }
-            }
-        });
-
-        tts.setOnUtteranceCompletedListener(new TextToSpeech.OnUtteranceCompletedListener() {
-            public void onUtteranceCompleted(String s) {
-                if (LISTEN.equals(s)) {
-                    handler.post(new Runnable() {
-                        @Override
-                        public void run() {
-                            doListen();
-                        }
-                    });
-
-                } else if (DONE.equals(s)) {
-                    handler.post(new Runnable() {
-                        @Override
-                        public void run() {
-//                                standby();
-                        }
-                    });
-                }
-            }
-        });
-
-        return tts;
     }
 
     SpeechRecognizer newSpeechRecognizer() {
@@ -125,8 +88,6 @@ public class MainService extends Service {
         if (receiver == null) {
             handler = new Handler(getApplicationContext().getMainLooper());
 
-            tts = newTextToSpeech();
-
             recognizer = newSpeechRecognizer();
 
             String url = getString(R.string.url);
@@ -163,7 +124,6 @@ public class MainService extends Service {
         client.close();
 
         recognizer.destroy();
-        tts.shutdown();
 
         super.onDestroy();
     }
@@ -176,10 +136,28 @@ public class MainService extends Service {
         sendBroadcast(intent);
     }
 
-    void speak(String message, String utteranceId) {
+    void speak(String message, final String utteranceId) {
         HashMap<String, String> params = new HashMap<>();
         params.put(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, utteranceId);
-        tts.speak(message, TextToSpeech.QUEUE_FLUSH, params);
+
+        try {
+            MediaPlayer player = MediaPlayer.create(this, Uri.parse("http://61.220.221.201/api/tts/ch/synthesisTest?inputText=" + URLEncoder.encode(message, "UTF-8")));
+            player.setOnCompletionListener(new MediaPlayer.OnCompletionListener() {
+                @Override
+                public void onCompletion(MediaPlayer mediaPlayer) {
+                    if (LISTEN.equals(utteranceId)) {
+                        doListen();
+
+                    } else {
+                        standby();
+                    }
+                }
+            });
+            player.start();
+
+        } catch (Exception e) {
+            LOG.error("Failed to play voice", e);
+        }
     }
 
     void hello() {
@@ -216,7 +194,7 @@ public class MainService extends Service {
             PushMessage pm = (PushMessage) b;
             for (PushMessage.CommandType command : pm.Commands) {
                 if (command.Content != null) {
-                    speak(command.Content, DONE);
+                    speak(command.Content, (command.Content.endsWith("?"))? LISTEN : DONE);
                 }
             }
         }
