@@ -35,6 +35,8 @@ import tw.com.cht.iot.util.JsonUtils;
 public class MainService extends Service {
     static final Logger LOG = LoggerFactory.getLogger(MainService.class);
 
+    static final long MINIMUM_INTENT_INTERVAL = 5000L;
+
     static final String LISTEN = "listen";
     static final String DONE = "done";
 
@@ -56,8 +58,8 @@ public class MainService extends Service {
             public void onResults(Bundle bundle) {
                 ArrayList<String> data = bundle.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
                 if (!data.isEmpty()) {
-                    String first = data.get(0);
-                    onAsk(first);
+                    String first = data.get(0); // TODO - just use the first result
+                    onAsk(first); // send the question to CHT server
                 }
             }
 
@@ -74,13 +76,14 @@ public class MainService extends Service {
         return new SpeakerClient(url, vendorID, deviceNO, new SpeakerClient.Listener() {
             @Override
             public void onBullet(Bullet b) {
-                doCommand(b);
+                doCommand(b); // reactive the result from CHT server (just speak the message)
             }
         });
     }
 
     // ======
 
+    // initialize the service
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         LOG.info("Service is started. {}", startId);
@@ -96,15 +99,25 @@ public class MainService extends Service {
             client = newSpeakerClient(url, vendorID, deviceNO);
 
             receiver = new BroadcastReceiver() {
+                long last;
+
                 @Override
                 public void onReceive(Context context, Intent intent) {
                     LOG.info("Receive - {}", intent);
 
-                    hello();
+                    long now = System.currentTimeMillis();
+                    if ((now - last) > MINIMUM_INTENT_INTERVAL) { // de-duplicate the intent
+                        last = now;
+
+                        hello();
+
+                    } else {
+                        LOG.warn("Skip the duplicated intent");
+                    }
                 }
             };
 
-            String action = getString(R.string.trigger_intent_action);
+            String action = getString(R.string.trigger_intent_action); // just receive the specified intent
             registerReceiver(receiver, new IntentFilter(action));
         }
 
@@ -141,7 +154,8 @@ public class MainService extends Service {
         params.put(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, utteranceId);
 
         try {
-            MediaPlayer player = MediaPlayer.create(this, Uri.parse("http://61.220.221.201/api/tts/ch/synthesisTest?inputText=" + URLEncoder.encode(message, "UTF-8")));
+            Uri uri = Uri.parse(String.format(getString(R.string.cht_tts_url_format), URLEncoder.encode(message)));
+            MediaPlayer player = MediaPlayer.create(this, uri); // play the mp3 audio stream
             player.setOnCompletionListener(new MediaPlayer.OnCompletionListener() {
                 @Override
                 public void onCompletion(MediaPlayer mediaPlayer) {
@@ -149,7 +163,7 @@ public class MainService extends Service {
                         doListen();
 
                     } else {
-                        standby();
+//                        standby(); // useless now
                     }
                 }
             });
@@ -160,10 +174,12 @@ public class MainService extends Service {
         }
     }
 
+    // after the trigger word, I'll response the 'hello'
     void hello() {
         speak(getString(R.string.hello), LISTEN);
     }
 
+    // wait for user's command
     void doListen() {
         Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
         intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
@@ -175,6 +191,7 @@ public class MainService extends Service {
         recognizer.startListening(intent);
     }
 
+    // I got command words from user, send to CHT server
     void onAsk(String text) {
         if (!text.isEmpty()) {
             InvokeReq req = new InvokeReq();
@@ -189,6 +206,7 @@ public class MainService extends Service {
         }
     }
 
+    // I got command from CHT server. Do some action now.
     void doCommand(Bullet b) {
         if (b instanceof PushMessage) {
             PushMessage pm = (PushMessage) b;

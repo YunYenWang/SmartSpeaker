@@ -7,6 +7,8 @@
     <string name="vendorID">jazzhipster</string>
     <string name="deviceNO">0000000001</string>
 
+    <string name="cht_tts_url_format">http://61.220.221.201/api/tts/ch/synthesisTest?inputText=%s</string>
+
     <string name="trigger_intent_action">com.js.wakeup</string>
     <string name="standby_intent_action">com.js.standby</string>
 
