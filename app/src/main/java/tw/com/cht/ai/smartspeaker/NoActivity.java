@@ -3,6 +3,7 @@ package tw.com.cht.ai.smartspeaker;
 import android.content.Intent;
 import android.os.Bundle;
 import android.support.v7.app.AppCompatActivity;
+import android.view.View;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -22,5 +23,11 @@ public class NoActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
+    }
+
+    public void onClick(View view) {
+        String action = getString(R.string.trigger_intent_action);
+        Intent intent = new Intent(action);
+        sendBroadcast(intent);
     }
 }

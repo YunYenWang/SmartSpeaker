@@ -194,7 +194,7 @@ public class MainService extends Service {
             PushMessage pm = (PushMessage) b;
             for (PushMessage.CommandType command : pm.Commands) {
                 if (command.Content != null) {
-                    speak(command.Content, (command.Content.endsWith("?"))? LISTEN : DONE);
+                    speak(command.Content, (command.Content.endsWith("?") || command.Content.endsWith("？"))? LISTEN : DONE);
                 }
             }
         }
